@@ -1,0 +1,9 @@
+{
+    "name": "Tama",
+    "satiety": 70,
+    "happiness": 80,
+    "energy": 60,
+    "is_sleeping": false,
+    "sleep_end_time": null,
+    "last_update": 1794755306.6653366
+}
