@@ -159,16 +159,44 @@ T-코블러 표면에 인쇄된 실크스크린 라벨을 찾아서 연결하세
 
 ## 7. 단독 기능 테스트 실행
 
-라즈베리파이의 터미널(SSH 또는 콘솔)에서 아래 명령어를 실행하여 배선이 정상인지 검증합니다.
+라즈베리파이 터미널(SSH 또는 콘솔)에서 현재 작업 디렉터리에 맞춰 아래 명령어를 실행하여 배선이 정상인지 검증합니다.
+
+> 💡 **참고 (실행 위치별 명령어)**:  
+> - 현재 위치가 `~/hardware`인 경우: `python3 tests/test_buttons.py`
+> - 현재 위치가 `~/microprocessor`인 경우: `python3 -m hardware.tests.test_buttons`
 
 ### 7.1 LED 테스트 (점등/깜빡임 확인)
 ```bash
-python3 -m hardware.tests.test_leds
+# hardware 폴더 내에서 실행 시:
+python3 tests/test_leds.py
 ```
 - 4개의 LED가 순차적으로 켜지고 깜빡인 후 꺼지는지 확인합니다.
 
 ### 7.2 버튼 테스트 (입력 감지 확인)
 ```bash
-python3 -m hardware.tests.test_buttons
+# hardware 폴더 내에서 실행 시:
+python3 tests/test_buttons.py
 ```
 - 버튼 A, B, C를 하나씩 눌렀을 때 터미널에 `Button A`, `Button B`, `Button C`가 1번씩 찍히는지 확인합니다.
+
+---
+
+## 8. 트러블슈팅: 자주 발생하는 실행 오류 해결법
+
+### Q1. `ModuleNotFoundError: No module named 'hardware'`
+- **원인**: 현재 작업 디렉터리가 `~/hardware`이어서 파이썬이 상위 패키지인 `hardware`를 찾지 못함.
+- **해결**: `python3 tests/test_buttons.py` 명령어로 직접 스크립트 파일을 실행하세요.
+
+### Q2. `xCreatePipe: Can't set permissions ... FileNotFoundError: '.lgd-nfy-3'`
+- **원인**: 라즈베리파이 OS (Debian Bookworm) 최신 버전의 `lgpio` 라이브러리가 현재 디렉터리에 임시 알림 파이프 파일(`.lgd-nfy*`)을 생성하려다 권한 제약으로 실패하는 버그.
+- **해결**:
+  1. 본 코드에는 `os.environ['LG_WD'] = '/tmp'`가 이미 자동 적용되어 최신 코드를 git pull 받으시면 즉시 해결됩니다.
+  2. 만약 터미널에서 계속 오류가 난다면 쉘에 아래 명령어를 먼저 입력한 후 실행하세요:
+     ```bash
+     export LG_WD=/tmp
+     python3 tests/test_buttons.py
+     ```
+  3. GPIO 접근 권한이 없다면 현재 계정을 gpio 그룹에 추가합니다:
+     ```bash
+     sudo usermod -aG gpio,dialout $USER
+     ```

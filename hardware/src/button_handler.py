@@ -3,6 +3,10 @@
 물리 버튼 3개 (A, B, C)의 입력을 디바운싱하여 press 이벤트를 발생시킵니다.
 """
 
+import os
+# 라즈베리파이 OS (Bookworm) lgpio 알림 파이프 권한 오류 방지
+os.environ.setdefault('LG_WD', '/tmp')
+
 import time
 from typing import Callable, Optional
 from .config import BUTTON_PINS, DEBOUNCE_TIME_MS

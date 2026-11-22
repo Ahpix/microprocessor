@@ -3,21 +3,39 @@ LED 4개 단독 동작 테스트 스크립트 (test_leds.py)
 실제 라즈베리파이에서 실행하여 LED 4개(배고픔, 행복도, 에너지, 연결)가
 순차 점등(On), 깜빡임(Blink), 소등(Off) 상태를 정상 수행하는지 확인합니다.
 
-실행 방법:
-  python -m hardware.tests.test_leds
-  또는
-  python test_leds.py (hardware/tests 디렉터리 내)
+어디서든 실행 가능:
+  1) hardware 디렉터리 내:
+     python3 tests/test_leds.py
+     또는
+     python3 -m tests.test_leds
+  2) 프로젝트 루트(microprocessor) 내:
+     python3 -m hardware.tests.test_leds
 """
 
-import sys
 import os
+import sys
+
+# 1. 라즈베리파이 OS (Debian Bookworm) lgpio 알림 파이프 권한 오류 방지
+os.environ.setdefault('LG_WD', '/tmp')
+
+# 2. 실행 위치(루트 또는 hardware 폴더 내부)에 구애받지 않도록 sys.path 보정
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.abspath(os.path.join(current_dir, ".."))
+grandparent_dir = os.path.abspath(os.path.join(parent_dir, ".."))
+
+for p in [parent_dir, grandparent_dir]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+# 3. 유연한 모듈 import
+try:
+    from hardware.src.led_controller import LEDController
+    from hardware.src.config import LED_PINS
+except ModuleNotFoundError:
+    from src.led_controller import LEDController
+    from src.config import LED_PINS
+
 import time
-
-# 상위 src 모듈 import 경로 추가
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-
-from hardware.src.led_controller import LEDController
-from hardware.src.config import LED_PINS
 
 def main():
     print("=" * 60)
