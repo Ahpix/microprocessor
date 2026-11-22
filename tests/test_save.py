@@ -1,8 +1,7 @@
-
 import pytest
 
 import storage.save_manager as save_manager
-from core.tamagotchi import Tamagotchi
+from game_engine.core.tamagotchi import Tamagotchi
 
 
 def test_save_and_load(tmp_path, monkeypatch):
