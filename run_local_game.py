@@ -37,6 +37,7 @@ class LocalGameRunner:
         self.last_action_message = "게임이 시작되었습니다! 버튼을 눌러 조작해 보세요."
         self.last_raw_event = "아직 입력 없음"
         self.press_counts = {"A": 0, "B": 0, "C": 0}
+        self.last_sleep_time = 0.0  # 잠든 직후 연속 입력(깨우기) 방지용 쿨다운
 
         # 1. 저장 데이터 불러오기 또는 신규 캐릭터 생성
         saved_pet = load_game()
@@ -75,33 +76,60 @@ class LocalGameRunner:
         event = payload.get("event", "press")
         message_id = event_dict.get("message_id")
 
-        if button:
-            self.press_counts[button] = self.press_counts.get(button, 0) + 1
-            self.last_raw_event = f"[{time.strftime('%H:%M:%S')}] 버튼 {button} 눌림 감지!"
+        if not button:
+            return
 
-            res = self.engine.handle_button_event(button=button, event=event, message_id=message_id)
-            self._update_action_message(button, res)
-            self._render_ui()
+        now = time.time()
 
-    def _update_action_message(self, button: str, result: Dict[str, Any]):
+        # 잠든 직후 1초 이내에 들어오는 버튼 B 입력은 '길게 누름/채터링' 잔여 입력으로 간주하여 무시
+        if button == "B" and (now - self.last_sleep_time < 1.0):
+            return
+
+        # 1. 버튼 누름 전 이전 상태 기억
+        prev_state = self.engine.get_state()
+        prev_mode = prev_state["ui"]["mode"]
+        prev_menu = prev_state["ui"]["selected_menu"]
+
+        # 2. 통계 갱신
+        self.press_counts[button] = self.press_counts.get(button, 0) + 1
+        self.last_raw_event = f"[{time.strftime('%H:%M:%S')}] 버튼 {button} 눌림 감지!"
+
+        # 3. 엔진에 입력 처리
+        res = self.engine.handle_button_event(button=button, event=event, message_id=message_id)
+
+        # 4. 방금 잠들기(sleep)가 실행되었다면 쿨다운 시각 기록
+        new_state = self.engine.get_state()
+        if prev_mode == "home" and prev_menu == "sleep" and new_state["ui"]["mode"] == "sleep":
+            self.last_sleep_time = now
+
+        # 5. 알림 메시지 갱신 및 화면 출력
+        self._update_action_message(button, res, prev_mode, prev_menu)
+        self._render_ui()
+
+    def _update_action_message(self, button: str, result: Dict[str, Any], prev_mode: str, prev_menu: Optional[str]):
         """버튼 입력 결과를 사람이 읽기 쉬운 메시지로 갱신"""
-        state = self.engine.get_state()
-        mode = state["ui"]["mode"]
-        menu = state["ui"]["selected_menu"]
+        cur_state = self.engine.get_state()
+        cur_menu = cur_state["ui"]["selected_menu"]
 
         if result.get("status") == "error":
             self.last_action_message = f"[경고] 조작 불가: {result.get('message', '동작 실패')}"
             return
 
         if button == "A":
-            self.last_action_message = f"[버튼 A] 메뉴 이동 ➔ 현재 선택: '{menu}'"
+            self.last_action_message = f"[버튼 A] 메뉴 이동 ➔ 현재 선택: '{cur_menu}'"
         elif button == "B":
-            if mode == "sleep":
+            if prev_mode == "sleep":
                 self.last_action_message = "[버튼 B] 다마고치를 흔들어 깨웠습니다! ⏰"
+            elif prev_menu == "sleep":
+                self.last_action_message = "[버튼 B] 다마고치가 잠에 들었습니다! 💤 (Zzz...)"
+            elif prev_menu == "feed":
+                self.last_action_message = "[버튼 B] 냠냠! 먹이를 먹었습니다! 🍖 (포만감 회복)"
+            elif prev_menu == "play":
+                self.last_action_message = "[버튼 B] 신나게 놀아주었습니다! 🎾 (행복도 상승)"
             else:
-                self.last_action_message = f"[버튼 B] '{menu}' 실행 완료! ✨"
+                self.last_action_message = f"[버튼 B] '{prev_menu}' 실행 완료! ✨"
         elif button == "C":
-            self.last_action_message = "[버튼 C] 메뉴 선택 취소 (기본 메뉴 복귀)"
+            self.last_action_message = "[버튼 C] 메뉴 선택 취소 (기본 메뉴 'feed'로 복귀)"
 
     def _on_engine_state_change(self, state: Dict[str, Any]):
         """엔진 상태 변경 시 화면 갱신"""
