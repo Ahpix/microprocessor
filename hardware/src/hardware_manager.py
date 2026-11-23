@@ -3,6 +3,10 @@
 버튼 입력 수집과 LED 제어를 통합 관리하며, 프로토콜 메시지(button_event / led_command)를 처리합니다.
 """
 
+import os
+# 라즈베리파이 OS (Bookworm) lgpio 알림 파이프 권한 오류 방지
+os.environ.setdefault('LG_WD', '/tmp')
+
 import time
 import uuid
 from typing import Callable, Optional, Dict, Any

@@ -4,6 +4,10 @@ LED 제어 모듈 (LED Controller)
 모드: 'on', 'off', 'blink' 지원
 """
 
+import os
+# 라즈베리파이 OS (Bookworm) lgpio 알림 파이프 권한 오류 방지
+os.environ.setdefault('LG_WD', '/tmp')
+
 import time
 import threading
 from typing import Dict, Any
