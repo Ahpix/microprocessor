@@ -1,0 +1,54 @@
+name: Auto Create PR on Hardware Push
+
+on:
+  push:
+    branches:
+      - hardware
+
+jobs:
+  auto-create-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check and Create Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 1. 이미 main을 향해 열려있는 PR이 있는지 확인
+          EXISTING_PR=$(gh pr list --head hardware --base main --state open --json number -q '.[0].number')
+          
+          if [ -n "$EXISTING_PR" ]; then
+            echo "이미 열려있는 PR (#$EXISTING_PR)이 존재합니다. 중복 생성을 건너뜁니다."
+            exit 0
+          fi
+
+          # 2. 최신 커밋 제목 가져오기
+          LATEST_MSG=$(git log -1 --pretty=%s)
+          PR_TITLE="feat(hardware): $LATEST_MSG"
+
+          # 3. 최근 변경 커밋 요약
+          COMMIT_LOGS=$(git log main..hardware --oneline -n 5)
+
+          # 4. Pull Request 자동 생성
+          gh pr create \
+            --base main \
+            --head hardware \
+            --title "$PR_TITLE" \
+            --body "## 📌 개요
+          \`hardware\` 브랜치 푸시에 의해 자동으로 생성된 Pull Request입니다.
+
+          ### 🛠️ 최근 커밋 내역
+          \`\`\`text
+          $COMMIT_LOGS
+          \`\`\`
+
+          ---
+          > 🤖 *이 PR은 GitHub Actions 워크플로우(\`auto_pr_hardware.yml\`)에 의해 자동 생성되었습니다.*"
