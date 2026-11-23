@@ -21,7 +21,7 @@ if PROJECT_ROOT not in sys.path:
 
 import time
 import threading
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from game_engine.core.engine import GameEngine
 from game_engine.core.tamagotchi import Tamagotchi
@@ -33,7 +33,7 @@ from hardware.src.button_handler import IS_RPI
 class LocalGameRunner:
     def __init__(self):
         self.running = True
-        self.lock = threading.Lock()
+        self.ui_lock = threading.Lock()
         self.last_action_message = "게임이 시작되었습니다! 버튼을 눌러 조작해 보세요."
         self.last_raw_event = "아직 입력 없음"
         self.press_counts = {"A": 0, "B": 0, "C": 0}
@@ -45,7 +45,6 @@ class LocalGameRunner:
             self.last_action_message = f"저장된 다마고치 '{self.pet.name}'를 불러왔습니다."
         else:
             self.pet = Tamagotchi(name="Tama", pet_id="pet01")
-            # 테스트를 위해 포만감/행복도/에너지를 적절히 조절하여 액션 반응이 눈에 보이게 함
             self.pet.satiety = 60.0
             self.pet.happiness = 50.0
             self.pet.energy = 50.0
@@ -77,13 +76,11 @@ class LocalGameRunner:
         message_id = event_dict.get("message_id")
 
         if button:
-            with self.lock:
-                self.press_counts[button] = self.press_counts.get(button, 0) + 1
-                self.last_raw_event = f"[{time.strftime('%H:%M:%S')}] 버튼 {button} 눌림 감지!"
+            self.press_counts[button] = self.press_counts.get(button, 0) + 1
+            self.last_raw_event = f"[{time.strftime('%H:%M:%S')}] 버튼 {button} 눌림 감지!"
 
             res = self.engine.handle_button_event(button=button, event=event, message_id=message_id)
-            with self.lock:
-                self._update_action_message(button, res)
+            self._update_action_message(button, res)
             self._render_ui()
 
     def _update_action_message(self, button: str, result: Dict[str, Any]):
@@ -108,7 +105,7 @@ class LocalGameRunner:
 
     def _on_engine_state_change(self, state: Dict[str, Any]):
         """엔진 상태 변경 시 화면 갱신"""
-        self._render_ui()
+        self._render_ui(current_state=state)
 
     def _on_engine_led_command(self, led_cmd: Dict[str, Any]):
         """엔진에서 LED 명령이 생성되면 하드웨어로 전달"""
@@ -119,84 +116,83 @@ class LocalGameRunner:
         bar = "█" * filled + "░" * (length - filled)
         return f"[{bar}] {value:>3}%"
 
-    def _render_ui(self):
+    def _render_ui(self, current_state: Optional[Dict[str, Any]] = None):
         """콘솔 화면에 다마고치 상태와 메뉴를 실시간으로 출력"""
-        with self.lock:
-            state = self.engine.get_state()
+        with self.ui_lock:
+            state = current_state if current_state is not None else self.engine.get_state()
             pet = state["pet"]
             ui = state["ui"]
-            leds = self.engine.generate_led_command().get("payload", {}).get("leds", {})
-            if not leds:
-                leds = self.engine.generate_led_command().get("leds", {})
+            led_cmd = self.engine.generate_led_command()
+            leds = led_cmd.get("payload", {}).get("leds", {}) or led_cmd.get("leds", {})
             action_msg = self.last_action_message
             raw_event = self.last_raw_event
             counts = dict(self.press_counts)
 
-        # 화면 지우기 (ANSI 코드)
-        sys.stdout.write("\033[H\033[J")
+            # 화면 지우기 (ANSI 코드)
+            sys.stdout.write("\033[H\033[J")
 
-        # 다마고치 캐릭터 기분/상태 이모지
-        if not pet["is_alive"]:
-            mood_icon = "💀 (사망)"
-        elif pet["is_sleeping"]:
-            mood_icon = "💤 (수면 중... Zzz)"
-        elif pet["satiety"] <= 30:
-            mood_icon = "🥺 (배고파요!)"
-        elif pet["happiness"] >= 70:
-            mood_icon = "🥰 (아주 행복함!)"
-        else:
-            mood_icon = "🐣 (보통)"
+            # 다마고치 캐릭터 기분/상태 이모지
+            if not pet["is_alive"]:
+                mood_icon = "💀 (사망)"
+            elif pet["is_sleeping"]:
+                mood_icon = "💤 (수면 중... Zzz)"
+            elif pet["satiety"] <= 30:
+                mood_icon = "🥺 (배고파요!)"
+            elif pet["happiness"] >= 70:
+                mood_icon = "🥰 (아주 행복함!)"
+            else:
+                mood_icon = "🐣 (보통)"
 
-        def led_tag(name: str) -> str:
-            cfg = leds.get(name, {})
-            mode = cfg.get("mode", "off")
-            if mode == "on":
-                return "🟢 ON   "
-            elif mode == "blink":
-                return "🟡 BLINK(경고!)"
-            return "⚪ OFF  "
+            def led_tag(name: str) -> str:
+                cfg = leds.get(name, {})
+                mode = cfg.get("mode", "off")
+                if mode == "on":
+                    return "🟢 ON   "
+                elif mode == "blink":
+                    return "🟡 BLINK(경고!)"
+                return "⚪ OFF  "
 
-        current_menu = ui["selected_menu"]
-        def menu_box(m_name: str, label: str) -> str:
-            if ui["mode"] == "sleep":
-                return f"  [ {label} (수면 중) ]"
-            if current_menu == m_name:
-                return f"👉 [ {label} ] 👈"
-            return f"   [ {label} ]"
+            current_menu = ui["selected_menu"]
+            def menu_box(m_name: str, label: str) -> str:
+                if ui["mode"] == "sleep":
+                    return f"  [ {label} (수면 중) ]"
+                if current_menu == m_name:
+                    return f"👉 [ {label} ] 👈"
+                return f"   [ {label} ]"
 
-        hw_status = "실제 라즈베리파이 GPIO (정상)" if IS_RPI else "⚠️ 시뮬레이션 모드 (RPi.GPIO 미감지)"
+            hw_status = "실제 라즈베리파이 GPIO (정상)" if IS_RPI else "⚠️ 시뮬레이션 모드 (RPi.GPIO 미감지)"
 
-        out = []
-        out.append("=" * 65)
-        out.append(f"  🐣 다마고치 조작기 로컬 플레이어  |  이름: {pet['name']} {mood_icon}")
-        out.append(f"  하드웨어 환경: {hw_status}")
-        out.append("=" * 65)
-        out.append(f"  포만감 (Satiety)   : {self._make_progress_bar(pet['satiety'])}   LED: {led_tag('satiety')}")
-        out.append(f"  행복도 (Happiness) : {self._make_progress_bar(pet['happiness'])}   LED: {led_tag('happiness')}")
-        out.append(f"  에너지 (Energy)    : {self._make_progress_bar(pet['energy'])}   LED: {led_tag('energy')}")
-        out.append(f"  서버 연결 상태     : {'정상 연결':<24} LED: {led_tag('connection')}")
-        out.append("-" * 65)
-        out.append(f"  현재 모드: [{ui['mode'].upper()}]")
-        out.append("  선택 메뉴:")
-        out.append(f"    {menu_box('feed', '1. 먹이주기 (FEED)')}")
-        out.append(f"    {menu_box('play', '2. 놀아주기 (PLAY)')}")
-        out.append(f"    {menu_box('sleep', '3. 잠자기   (SLEEP)')}")
-        out.append(f"    {menu_box('battle', '4. 대전하기 (BATTLE)')}")
-        out.append("-" * 65)
-        out.append(f"  🔍 하드웨어 입력 감지 현황:")
-        out.append(f"    - 누적 누름 횟수 : Button A ({counts.get('A', 0)}회) | Button B ({counts.get('B', 0)}회) | Button C ({counts.get('C', 0)}회)")
-        out.append(f"    - 최근 감지 신호 : {raw_event}")
-        out.append(f"  📢 게임 알림      : {action_msg}")
-        out.append("=" * 65)
-        out.append("  [물리 버튼 안내]")
-        out.append("    🔘 버튼 A (#17) : 메뉴 이동")
-        out.append("    🔘 버튼 B (#27) : 선택 / 실행 (먹이/놀기/잠자기)")
-        out.append("    🔘 버튼 C (#22) : 취소 / 기본 메뉴 복귀")
-        out.append("  (종료하려면 Ctrl+C를 누르세요.)")
-        out.append("=" * 65)
+            out = []
+            out.append("=" * 65)
+            out.append(f"  🐣 다마고치 조작기 로컬 플레이어  |  이름: {pet['name']} {mood_icon}")
+            out.append(f"  하드웨어 환경: {hw_status}")
+            out.append("=" * 65)
+            out.append(f"  포만감 (Satiety)   : {self._make_progress_bar(pet['satiety'])}   LED: {led_tag('satiety')}")
+            out.append(f"  행복도 (Happiness) : {self._make_progress_bar(pet['happiness'])}   LED: {led_tag('happiness')}")
+            out.append(f"  에너지 (Energy)    : {self._make_progress_bar(pet['energy'])}   LED: {led_tag('energy')}")
+            out.append(f"  서버 연결 상태     : {'정상 연결':<24} LED: {led_tag('connection')}")
+            out.append("-" * 65)
+            out.append(f"  현재 모드: [{ui['mode'].upper()}]")
+            out.append("  선택 메뉴:")
+            out.append(f"    {menu_box('feed', '1. 먹이주기 (FEED)')}")
+            out.append(f"    {menu_box('play', '2. 놀아주기 (PLAY)')}")
+            out.append(f"    {menu_box('sleep', '3. 잠자기   (SLEEP)')}")
+            out.append(f"    {menu_box('battle', '4. 대전하기 (BATTLE)')}")
+            out.append("-" * 65)
+            out.append(f"  🔍 하드웨어 입력 감지 현황:")
+            out.append(f"    - 누적 누름 횟수 : Button A ({counts.get('A', 0)}회) | Button B ({counts.get('B', 0)}회) | Button C ({counts.get('C', 0)}회)")
+            out.append(f"    - 최근 감지 신호 : {raw_event}")
+            out.append(f"  📢 게임 알림      : {action_msg}")
+            out.append("=" * 65)
+            out.append("  [물리 버튼 안내]")
+            out.append("    🔘 버튼 A (#17) : 메뉴 이동")
+            out.append("    🔘 버튼 B (#27) : 선택 / 실행 (먹이/놀기/잠자기)")
+            out.append("    🔘 버튼 C (#22) : 취소 / 기본 메뉴 복귀")
+            out.append("  (종료하려면 Ctrl+C를 누르세요.)")
+            out.append("=" * 65)
 
-        sys.stdout.write("\n".join(out) + "\n")
-        sys.stdout.flush()
+            sys.stdout.write("\n".join(out) + "\n")
+            sys.stdout.flush()
 
     def _tick_loop(self):
         """1초마다 시간 경과(자연 배고픔/피로)를 반영하는 백그라운드 스레드"""
