@@ -46,7 +46,7 @@ class GameEngine:
         on_state_change: Optional[Callable[[Dict[str, Any]], None]] = None,
         on_led_command: Optional[Callable[[Dict[str, Any]], None]] = None,
     ):
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.device_id = device_id
         self.tamagotchi = tamagotchi if tamagotchi is not None else Tamagotchi("Tama", pet_id="pet01")
 
